@@ -17,7 +17,7 @@ public class Road : MonoBehaviour
 
 
 
-    public HashSet<int> Init(float z)
+    public HashSet<int> Init(float z, float difficulty)
     {
 
         // Place the obstacle at the location provided.
@@ -30,9 +30,9 @@ public class Road : MonoBehaviour
 
         // Choose the speed, we make them faster as we progress.
 
-        float minSpeed = Mathf.Lerp(1f, 5f, z / 500f);
+        float minSpeed = Mathf.Lerp(1f, 5f, difficulty);
 
-        float maxSpeed = Mathf.Lerp(5f, 10f, z / 500f);
+        float maxSpeed = Mathf.Lerp(5f, 10f, difficulty);
 
         speed = Random.Range(minSpeed, maxSpeed);
 

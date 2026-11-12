@@ -11,6 +11,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private Transform characterModel;
     [SerializeField] private Transform terrainHolder;
     [SerializeField] private TMPro.TextMeshProUGUI scoreText;
+    [SerializeField] private TMPro.TextMeshProUGUI levelText; // optional
 
 
     [Header("Terrain objects")]
@@ -19,7 +20,16 @@ public class GameManager : MonoBehaviour
     [SerializeField]
     private Road roadPrefab;
 
+    [SerializeField]
+    private Coin coinPrefab; // optional, a gold disc is generated if empty
 
+    [Header("Coins")]
+    [SerializeField] private int coinValue = 5;               // points per coin
+    [SerializeField][Range(0f, 1f)] private float coinChance = 0.25f; // chance a row has a coin
+
+    [Header("Levels (driven by score)")]
+    [SerializeField] private int pointsPerLevel = 20;  // score needed per level
+    [SerializeField] private int maxLevel = 20;        // difficulty stops growing here
 
     [Header("Game parameters")]
    [SerializeField] private float moveDuration = 0.2f;
@@ -38,7 +48,12 @@ public class GameManager : MonoBehaviour
     private Vector2Int characterPos;
     private int spawnLocation;
     private List<(float terrainHeight, HashSet<int> locations)> obstacles = new ();
+    private Dictionary<Vector2Int, Coin> coins = new();
     private int score = 0;
+    private int furthestRow = 0;   // distance part of the score
+    private int coinsCollected = 0;
+    private int level = 1;
+    private Material coinMaterial;
     void Awake()
     {
         // Initialise all the starting state.
@@ -57,11 +72,13 @@ public class GameManager : MonoBehaviour
 
 
 
-        score = 0;
-        scoreText.text = "0";
+        furthestRow = 0;
+        coinsCollected = 0;
+        UpdateScore();
 
-        // Remove all terrain
+        // Remove all terrain (coins are children of the terrain holder too)
         obstacles.Clear();
+        coins.Clear();
         foreach (Transform child in terrainHolder)
         {
             Destroy(child.gameObject);
@@ -76,15 +93,23 @@ public class GameManager : MonoBehaviour
         }
     
 }
+    // 0 at level 1, 1 at maxLevel. Everything that gets harder uses this.
+    private float Difficulty()
+    {
+        return Mathf.Clamp01((level - 1) / (float)Mathf.Max(1, maxLevel - 1));
+    }
+
     private void SpawnObstacle()
     {
-        float roadProbability = Mathf.Lerp(0.5f , 0.9f, spawnLocation / 250f);
+        float difficulty = Difficulty();
+        float roadProbability = Mathf.Lerp(0.5f, 0.9f, difficulty);
+        HashSet<int> locations;
         if (Random.value < roadProbability)
         {
             // Create a new road object
             Road road = Instantiate(roadPrefab, terrainHolder);
-            obstacles.Add((0.1f, road.Init(spawnLocation)));
-
+            locations = road.Init(spawnLocation, difficulty);
+            obstacles.Add((0.1f, locations));
         }
         else
         {
@@ -92,11 +117,71 @@ public class GameManager : MonoBehaviour
             Grass grass = Instantiate(grassPrefab, terrainHolder);
 
             // Record the height and locations of obstacles for this row.
-            obstacles.Add((0.2f, grass.Init(spawnLocation)));
+            locations = grass.Init(spawnLocation);
+            obstacles.Add((0.2f, locations));
         }
-       
+
+        TrySpawnCoin(spawnLocation, obstacles[spawnLocation].terrainHeight, locations);
+
         // Move to the next row.
         spawnLocation++;
+    }
+
+    private void TrySpawnCoin(int row, float terrainHeight, HashSet<int> blocked)
+    {
+        if (Random.value >= coinChance) return;
+
+        // Pick a free column (-5..5), not occupied by a tree.
+        int x = Random.Range(-5, 6);
+        if (blocked.Contains(x)) return;
+
+        Vector3 pos = new Vector3(x, terrainHeight + 0.6f, row);
+        Coin coin = coinPrefab != null
+            ? Instantiate(coinPrefab, pos, Quaternion.identity, terrainHolder)
+            : CreateDefaultCoin(pos);
+        coins[new Vector2Int(x, row)] = coin;
+    }
+
+    // Fallback so the feature works without making a prefab first.
+    private Coin CreateDefaultCoin(Vector3 pos)
+    {
+        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        go.name = "Coin";
+        Destroy(go.GetComponent<Collider>());
+        go.transform.SetParent(terrainHolder);
+        go.transform.position = pos;
+        go.transform.localScale = new Vector3(0.5f, 0.04f, 0.5f);
+        go.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+
+        if (coinMaterial == null)
+        {
+            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            coinMaterial = new Material(shader);
+            coinMaterial.color = new Color(1f, 0.82f, 0.1f);
+        }
+        go.GetComponent<Renderer>().sharedMaterial = coinMaterial;
+        return go.AddComponent<Coin>();
+    }
+
+    private void CollectCoinAt(Vector2Int pos)
+    {
+        if (coins.TryGetValue(pos, out Coin coin))
+        {
+            coins.Remove(pos);
+            if (coin != null) Destroy(coin.gameObject);
+            coinsCollected++;
+            UpdateScore();
+        }
+    }
+
+    // score = distance + coins. The level comes from the score.
+    private void UpdateScore()
+    {
+        score = furthestRow + coinsCollected * coinValue;
+        scoreText.text = $"{score}";
+
+        level = 1 + score / Mathf.Max(1, pointsPerLevel);
+        if (levelText != null) levelText.text = $"Level {level}";
     }
 
     private bool InStartArea(Vector2Int location)
@@ -149,10 +234,10 @@ public class GameManager : MonoBehaviour
                 {
                     characterPos = destination;
                     StartCoroutine(MoveCharacter());
-                    if ((destination.y+1) > score)
+                    if ((destination.y + 1) > furthestRow)
                     {
-                        score = destination.y + 1;
-                        scoreText.text = $"{score}";
+                        furthestRow = destination.y + 1;
+                        UpdateScore();
                     }
                 }
 
@@ -218,6 +303,7 @@ public class GameManager : MonoBehaviour
         if (gameState == GameState.Moving)
         {
             gameState = GameState.Ready;
+            CollectCoinAt(characterPos);
         }
     }
     public void PlayerCollision()
