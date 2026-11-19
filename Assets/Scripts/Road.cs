@@ -10,6 +10,8 @@ public class Road : MonoBehaviour
     [SerializeField] private List<Rigidbody> vehicles;
 
     private int direction = 1;
+    // Quand c'est true, toutes les voitures s'arrêtent (Game Over).
+    public static bool isStopped = false;
 
     private float speed = 1f;
 
@@ -67,7 +69,7 @@ public class Road : MonoBehaviour
 
     private void FixedUpdate()
     {
-
+        if (isStopped) return;
         // Move vehicles
 
         foreach (Rigidbody vehicle in spawnedVehicles)

@@ -12,6 +12,8 @@ public class GameManager : MonoBehaviour
     [SerializeField] private Transform terrainHolder;
     [SerializeField] private TMPro.TextMeshProUGUI scoreText;
     [SerializeField] private TMPro.TextMeshProUGUI levelText; // optional
+    [SerializeField] private GameObject gameOverPanel;              // le panneau GAME OVER
+    [SerializeField] private TMPro.TextMeshProUGUI finalScoreText;  // optionnel : score affiché à la fin
 
 
     [Header("Terrain objects")]
@@ -63,6 +65,8 @@ public class GameManager : MonoBehaviour
     private void NewLevel()
     {
         gameState = GameState.Ready;
+        Road.isStopped = false;                                   // les voitures roulent
+        if (gameOverPanel != null) gameOverPanel.SetActive(false); // on cache GAME OVER
 
         //Reset character position
         characterPos = new Vector2Int(0, -1);
@@ -309,8 +313,17 @@ public class GameManager : MonoBehaviour
     public void PlayerCollision()
     {
         gameState = GameState.Dead;
-        
+
+        // Arrête toutes les voitures
+        Road.isStopped = true;
+
+        // Affiche le score final
+        if (finalScoreText != null)
+            finalScoreText.text = $"Score : {score}\nPièces : {coinsCollected}\nNiveau : {level}";
+
+        // Affiche l'écran GAME OVER
+        if (gameOverPanel != null) gameOverPanel.SetActive(true);
     }
 
-   
-    }
+
+}
